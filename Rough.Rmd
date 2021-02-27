@@ -1,0 +1,424 @@
+---
+title: "Lab 3 - Code"
+output:
+  html_notebook: default
+  pdf_document:
+    latex_engine: xelatex
+always_allow_html: yes
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+```{r}
+#install.packages("readxl")
+#install.packages("patchwork")
+#install.packages("jsonlite")
+#install.packages("ggmap")
+```
+
+```{r}
+library("tidyverse")
+library("tidymodels")
+library(readxl)
+library("patchwork")
+library(jsonlite)
+library(ggmap)
+library("dplyr")
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+```{r}
+register_google(key = "AIzaSyAxLa-x349WEsS4vxFCO2ljhNSKeDJ5IDY", write = TRUE)
+httr::set_config(httr::config(http_version = 0))
+
+
+umd_scooter_data <- read_csv("Data/Scooters_Updated.csv")
+names(umd_scooter_data)
+
+write.csv(umd_scooter_data,"Data/Scooters_Updated.csv", row.names = FALSE)
+
+
+umd_scooter_data$Year <- format(umd_scooter_data$START, format="%Y")
+umd_scooter_data$Hours <- format(umd_scooter_data$START, format="%H")
+
+
+umd_scooter_data <- umd_scooter_data %>%
+  mutate(Season = case_when(between(Hours, 0, 5) ~ "Late Night",
+                            between(Hours, 6, 11) ~ "Morning",
+                            between(Hours, 12, 16) ~ "Noon",
+                            between(Hours, 17, 19) ~ "Evening",
+                            between(Hours, 20, 23) ~ "Night"),
+         Season = as.factor(Season),
+         Year = as.factor(Year),
+         VEHICLE_TYPE = as.factor(VEHICLE_TYPE))
+
+rides_across_years <- umd_scooter_data %>%
+  group_by(Year) %>%
+  summarise(Number_of_rides = n(),
+            Average_distance = mean(DISTANCE, na.rm = TRUE),
+            Average_Time = mean(MINUTES, na.rm = TRUE)) %>%
+  ungroup()
+
+
+(rides_across_years %>%
+  ggplot(aes(x=Year, y=Number_of_rides)) +
+  geom_col(fill="steelblue", width = 0.2) +
+  theme_bw() +
+  labs(x="Year", y="Number of rides", title = "Number of Rides for 2019 vs 2020") +
+  geom_text(y=rides_across_years$Number_of_rides + 500, label = (rides_across_years$Number_of_rides)) +
+  theme(panel.grid.minor.x = element_blank(),
+        panel.grid.major.x = element_blank())) /
+(rides_across_years %>%
+  ggplot(aes(x=Year, y=Average_distance)) +
+  geom_col(fill="red", width = 0.2) +
+  theme_bw() +
+  labs(x="Year", y="Average Distance", title = "Average Distance for 2019 vs 2020") +
+  geom_text(y=rides_across_years$Average_distance + 0.5, label = (round(rides_across_years$Average_distance, 2))) +
+  theme(panel.grid.minor.x = element_blank(),
+        panel.grid.major.x = element_blank()))
+
+
+
+umd_scooter_2020 <- umd_scooter_data %>%
+  filter(Year == "2020")
+
+umd_scooter_2019 <- umd_scooter_data %>%
+  filter(Year == "2019")
+
+
+umd_scooter_2019_seasons <- umd_scooter_2019 %>%
+  group_by(Season) %>%
+  summarise(Number_of_rides = n(),
+            Avg_distance = mean(DISTANCE, na.rm = TRUE))
+
+umd_scooter_2020_seasons <- umd_scooter_2020 %>%
+  group_by(Season) %>%
+  summarise(Number_of_rides = n(),
+            Avg_distance = mean(DISTANCE, na.rm = TRUE))
+
+
+(umd_scooter_2019_seasons %>%
+  ggplot(aes(x=Season, y=Number_of_rides)) +
+  geom_col(fill = "red", alpha = 0.8, width = 0.5) +
+  labs(title = "Number of rides during different day times for 2019", x="DayTime", y="Number of Rides") +
+  theme_bw() +
+  theme(panel.grid.major.x = element_blank())) /
+(umd_scooter_2020_seasons %>%
+  ggplot(aes(x=Season, y=Number_of_rides)) +
+  geom_col(fill = "grey50", width = 0.5, alpha=0.8) +
+  labs(title = "Number of rides during different day times for 2020", x="DayTime", y="Number of Rides") +
+  theme_bw() +
+  theme(panel.grid.major.x = element_blank()))
+
+(umd_scooter_2019_seasons %>%
+    ggplot(aes(x=Season, y=Avg_distance)) +
+    geom_col(fill = "red", alpha = 0.8, width = 0.5) +
+    labs(title = "Average Distance during different day times for 2019", x="DayTime", y="Average Distance") +
+    theme_bw() +
+    theme(panel.grid.major.x = element_blank())) /
+  (umd_scooter_2020_seasons %>%
+     ggplot(aes(x=Season, y=Avg_distance)) +
+     geom_col(fill = "grey50", width = 0.5, alpha=0.8) +
+     labs(title = "Average Distance during different day times for 2020", x="DayTime", y="Average Distance") +
+     theme_bw() +
+     theme(panel.grid.major.x = element_blank()))
+
+umd_scooter_2019_ride_type <- umd_scooter_2019 %>%
+  group_by(VEHICLE_TYPE) %>%
+  summarise(Number_of_rides = n(),
+            Avg_distance = mean(DISTANCE, na.rm = TRUE),
+            Avg_time = mean(MINUTES, na.rm = TRUE))
+
+umd_scooter_2020_ride_type <- umd_scooter_2020 %>%
+  group_by(VEHICLE_TYPE) %>%
+  summarise(Number_of_rides = n(),
+            Avg_distance = mean(DISTANCE, na.rm = TRUE),
+            Avg_time = mean(MINUTES, na.rm = TRUE))
+
+(umd_scooter_2019_ride_type %>%
+    ggplot(aes(x=VEHICLE_TYPE, y=Number_of_rides)) +
+    geom_col(fill = "red", alpha = 0.8, width = 0.5) +
+    labs(title = "Number of rides by Vehichle Type for 2019", x="Vehichle Type", y="Rides") +
+    theme_bw() +
+    theme(panel.grid.major.x = element_blank())) /
+  (umd_scooter_2020_ride_type %>%
+     ggplot(aes(x=VEHICLE_TYPE, y=Number_of_rides)) +
+     geom_col(fill = "grey50", width = 0.5, alpha=0.8) +
+     labs(title = "Number of rides by Vehichle Type for 2020", x="Vehichle Type", y="Rides") +
+     theme_bw() +
+     theme(panel.grid.major.x = element_blank()))
+
+(umd_scooter_2019_ride_type %>%
+    ggplot(aes(x=VEHICLE_TYPE, y=Avg_distance)) +
+    geom_col(fill = "red", alpha = 0.8, width = 0.5) +
+    labs(title = "Average Distance for Vehichle Type in 2019", x="Vehichle Type", y="Average Distance") +
+    theme_bw() +
+    theme(panel.grid.major.x = element_blank())) /
+  (umd_scooter_2020_ride_type %>%
+     ggplot(aes(x=VEHICLE_TYPE, y=Avg_distance)) +
+     geom_col(fill = "grey50", width = 0.5, alpha=0.8) +
+     labs(title = "Average Distance for Vehichle Type in 2020", x="Vehichle Type", y="Average Distance") +
+     theme_bw() +
+     theme(panel.grid.major.x = element_blank()))
+
+(umd_scooter_2019_ride_type %>%
+    ggplot(aes(x=VEHICLE_TYPE, y=Avg_time)) +
+    geom_col(fill = "red", alpha = 0.8, width = 0.5) +
+    labs(title = "Average Time for Vehichle Type in 2019", x="Vehichle Type", y="Average Time") +
+    theme_bw() +
+    theme(panel.grid.major.x = element_blank())) /
+  (umd_scooter_2020_ride_type %>%
+     ggplot(aes(x=VEHICLE_TYPE, y=Avg_time)) +
+     geom_col(fill = "grey50", width = 0.5, alpha=0.8) +
+     labs(title = "Average Time for Vehichle Type in 2020", x="Vehichle Type", y="Average Time") +
+     theme_bw() +
+     theme(panel.grid.major.x = element_blank()))
+
+umd_data_scooter_stops <- umd_scooter_2020 %>%
+  filter(((START.LONG > -76.915 | START.LONG < -76.977) | (START.LAT > 38.989 | START.LAT < 38.978)) & 
+         ((END.LONG < -76.915 & END.LONG > -76.977 ) & (END.LAT > 38.978 & END.LAT < 38.989 )))
+
+average_distance = mean(umd_data_scooter_stops$DISTANCE, na.rm = TRUE)
+
+umd_scooter_2019$Start_Location <- mapply(FUN = function(lon, lat) ifelse((lon < -76.915 & lon > -76.977) & (lat > 38.978 & lat < 38.989),
+                                                                          "OnCampus", "OffCampus"), umd_scooter_2019$START.LONG, umd_scooter_2019$START.LAT)
+
+umd_scooter_2020$Start_Location <- mapply(FUN = function(lon, lat) ifelse((lon < -76.915 & lon > -76.977) & (lat > 38.978 & lat < 38.989),
+                                                                          "OnCampus", "OffCampus"), umd_scooter_2020$START.LONG, umd_scooter_2020$START.LAT)
+
+top_10_stops_2019 <- umd_scooter_2019 %>%
+  mutate(Start_Location = as.factor(Start_Location)) %>%
+  group_by(Address) %>%
+  summarise(Number_of_rides = n(),
+            Average_Distance = mean(DISTANCE, na.rm = TRUE),
+            Average_Time = mean(MINUTES, na.rm = TRUE),
+            Start_Location = Start_Location)
+
+top_10_stops_2020 <- umd_scooter_2020 %>%
+  mutate(Start_Location = as.factor(Start_Location)) %>%
+  group_by(Address) %>%
+  summarise(Number_of_rides = n(),
+            Average_Distance = mean(DISTANCE, na.rm = TRUE),
+            Average_Time = mean(MINUTES, na.rm = TRUE),
+            Start_Location = Start_Location)
+
+top_10_stops_2019 <- unique(top_10_stops_2019)
+top_10_stops_2020 <- unique(top_10_stops_2020)
+
+top_10_stops_2019 <- top_10_stops_2019 %>%
+  mutate(Start_Location = as.factor(Start_Location),
+         Address = fct_reorder(Address, Number_of_rides, .desc = TRUE))
+
+top_10_stops_2020 <- top_10_stops_2020 %>%
+  mutate(Start_Location = as.factor(Start_Location),
+         Address = fct_reorder(Address, Number_of_rides, .desc = TRUE))
+
+top_10_2019 <- top_10_stops_2019 %>%
+  arrange(desc(Number_of_rides))
+top_10_2019 <- top_10_2019[1:10,]
+
+top_10_2020 <- top_10_stops_2020 %>%
+  arrange(desc(Number_of_rides))
+top_10_2020 <- top_10_2020[1:10,]
+
+top_10_2019 <- top_10_2019 %>%
+  separate(Address, c("Address1", "Address2"), sep = ",", extra = "merge") %>%
+  mutate(Address1 = fct_reorder(Address1, Number_of_rides, .desc = TRUE))
+
+top_10_2020 <- top_10_2020 %>%
+  separate(Address, c("Address1", "Address2"), sep = ",", extra = "merge") %>%
+  mutate(Address1 = fct_reorder(Address1, Number_of_rides, .desc = TRUE))
+
+
+(top_10_2019 %>%
+  ggplot(aes(x=Address1, y=Number_of_rides, fill=Start_Location)) +
+  geom_col() +
+  scale_x_discrete(guide=guide_axis(n.dodge=2)) +
+  labs(x="Address", y="Number of Rides", title = "Top 10 locations with highest rides in 2019",
+       caption = "Data Reference: Scooter Data") +
+  scale_fill_manual(name="",breaks=c("OffCampus","OnCampus"),
+                    values=c("darkred", "grey70")) +
+  geom_hline(yintercept = 0) +
+  theme(panel.background = element_blank(),
+        legend.position = "bottom",
+        axis.ticks = element_blank(),
+        panel.grid.major.y = element_line(color="grey80", linetype = 3)) +
+  theme_classic()) /
+(top_10_2020 %>%
+  ggplot(aes(x=Address1, y=Number_of_rides, fill=Start_Location)) +
+  geom_col() +
+  scale_x_discrete(guide=guide_axis(n.dodge=2)) +
+  labs(x="Address", y="Number of Rides", title = "Top 10 locations with highest rides in 2020",
+     caption = "Data Reference: Scooter Data") +
+  scale_fill_manual(name="",breaks=c("OffCampus","OnCampus"),
+                    values=c("darkred", "grey70")) +
+  geom_hline(yintercept = 0) +
+  theme(panel.background = element_blank(),
+        legend.position = "bottom",
+        axis.ticks = element_blank(),
+        panel.grid.major.y = element_line(color="grey80", linetype = 3)) +
+   scale_y_continuous(breaks = seq(0,1500,by=500)) +
+   ylim(0,1500) +
+  theme_classic())
+
+#umd_scooter_data$Address <- mapply(FUN = function(lon, lat) revgeocode(c(lon, lat)), umd_scooter_data$`START LONG`, umd_scooter_data$`START LAT`)
+#umd_scooter_data$EndStopAddress <- mapply(FUN = function(lon, lat) revgeocode(c(lon, lat)), umd_scooter_data$END.LONG, umd_scooter_data$END.LAT)
+```
+```{r}
+umd_wide_data <- read_csv("Data/Data_Wide.csv")
+```
+
+
+```{r}
+merged_data <-
+merge(x=umd_scooter_data, y=umd_wide_data, by="RIDE_ID", all.x = TRUE) %>% 
+  select(-c(CREATED.x:VEHICLE_TYPE.x,TIMESTAMPS.x, "START LONG":"END LAT"))
+names(merged_data)
+```
+```{r}
+started_on_ended_off <- 
+merged_data %>%
+  filter(((START.LONG < -76.915 & START.LONG > -76.977) & (START.LAT > 38.978 & START.LAT < 38.989)) & 
+         ((END.LONG > -76.915 | END.LONG < -76.977 ) | (END.LAT < 38.978 | END.LAT > 38.989 )))
+  
+```
+
+
+
+```{r}
+started_off_ended_on <- 
+merged_data %>%
+  filter(((START.LONG > -76.915 | START.LONG < -76.977) | (START.LAT < 38.978 | START.LAT > 38.989)) & 
+         ((END.LONG < -76.915 & END.LONG > -76.977 )  &  (END.LAT > 38.978  &  END.LAT < 38.989 )))
+started_off_ended_on
+```
+
+
+which campus exit was used the most?
+```{r}
+started_on_ended_off %>% 
+  mutate(exit_keeper = 0)
+```
+```{r}
+names(started_on_ended_off)
+```
+
+
+```{r}
+started_on_ended_off[2,30]
+new <-  gsub("\\[","",started_on_ended_off[2,30])
+ we <- gsub("\\]","", new)
+ 
+ we1 <- as.double(sapply(str_split( we, ","),getElement, 2))
+ we1
+ 
+ 
+```
+for (i in col_start:col_end){
+  gsub("\\[","",test_inst)
+  gsub("\\]","",test_inst)
+}
+
+
+
+```{r}
+
+for (i in 0:length(started_on_ended_off))
+{
+  counter = 0
+  for (n in 19:269)
+  {
+    if(length(started_on_ended_off[i,n]) > 0)
+    {
+      test_inst <- gsub("\\[","",started_on_ended_off[i,n]) 
+      long_lat <- gsub("\\]","",test_inst)
+      if(long_lat !="MultiPoint")
+      {
+        end_long <- sapply(str_split( long_lat, ","),getElement, 1)
+        end_lat <-  sapply(str_split( long_lat, ","),getElement, 2)
+      
+      
+        if((as.double(end_long) > -76.915 | as.double(end_long) < -76.977 ) | (as.double(end_lat) < 38.978 | as.double(end_lat) > 38.989 ))
+        {
+          started_on_ended_off$exit_keeper[i] = toString(c(end_long, end_lat))
+          counter = 1
+        }
+      }
+    }
+   if(counter==1)
+   {
+     break
+   }
+  }
+  
+}
+```
+
+----------------------------------------------------
+
+
+```{r}
+
+
+started_on_ended_off$exit_keeper <- as.factor(started_on_ended_off$exit_keeper)
+table(started_on_ended_off$exit_keeper)
+
+
+```
+
+```{r}
+for (i in 0:length(started_off_ended_on))
+{
+  counter = 0
+  for (n in 19:269)
+  {
+    if(length(started_off_ended_on[i,n]) > 0)
+    {
+      test_inst <- gsub("\\[","",started_off_ended_on[i,n]) 
+      long_lat <- gsub("\\]","",test_inst)
+      if(long_lat !="MultiPoint")
+      {
+        end_long <- sapply(str_split( long_lat, ","),getElement, 1)
+        end_lat <-  sapply(str_split( long_lat, ","),getElement, 2)
+      
+      
+        if((as.double(end_long) > -76.915 | as.double(end_long) < -76.977 ) | (as.double(end_lat) < 38.978 | as.double(end_lat) > 38.989 ))
+        {
+          started_off_ended_on$exit_keeper[i] = toString(c(end_long, end_lat))
+          counter = 1
+        }
+      }
+    }
+   if(counter==1)
+   {
+     break
+   }
+  }
+  
+}
+```
+
+```{r}
+
+started_off_ended_on$exit_keeper <- as.factor(started_off_ended_on$exit_keeper)
+table(started_off_ended_on$exit_keeper)
+
+
+
+```
+
+
+
+```{r}
+#write.csv(merge, file = 'merge.csv')
+write.csv(started_off_ended_on, file = 'startedOff.csv')
+write.csv(started_on_ended_off, file = 'endedoff.csv')
+
+```
